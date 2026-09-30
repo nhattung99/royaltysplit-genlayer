@@ -144,30 +144,30 @@ export const formatWriteError = (err) => {
   const msg = String(err?.shortMessage || err?.details || err?.message || err || '');
   const low = msg.toLowerCase();
   if (low.includes('user rejected') || low.includes('user denied') || low.includes('rejected the request')) {
-    return 'Đã hủy giao dịch trong MetaMask.';
+    return 'Transaction cancelled in MetaMask.';
   }
   if (low.includes('insufficient') || low.includes('funds')) {
-    return 'Không đủ GEN cho số escrow cộng gas. Nạp ví từ GenLayer Studio → Accounts.';
+    return 'Not enough GEN for this amount plus gas. Fund the wallet from GenLayer Studio → Accounts.';
   }
   if (low.includes('invalid address') || (low.includes('undefined') && low.includes('address'))) {
-    return 'Chưa gắn địa chỉ ví. Kết nối lại MetaMask trên GenLayer Studionet rồi thử lại.';
+    return 'Wallet address was not attached. Reconnect MetaMask on GenLayer Studionet and retry.';
   }
   if (low.includes('reverted')) {
-    return 'Giao dịch Studionet bị revert. Trạng thái contract không đổi. Kiểm tra % chia, nguồn tham chiếu và số GEN.';
+    return 'Studionet transaction reverted. Contract state was not changed. Check the split, reference URLs, and GEN amount.';
   }
   if (low.includes('did not update') || low.includes('state unchanged') || low.includes('to update on studionet')) {
-    return 'MetaMask đã xác nhận nhưng storage chưa đổi. Bấm Làm mới. Nếu vẫn vậy, giao dịch GenVM chưa vào — kiểm tra số dư GEN rồi gửi lại.';
+    return 'MetaMask confirmed, but contract storage did not change. Refresh. If it is still unchanged, the GenVM call did not land — check the GEN balance and retry.';
   }
   if (low.includes('canceled') || low.includes('cancelled')) {
-    return 'Studionet đánh dấu giao dịch CANCELED. Làm mới, rồi gửi lại nếu state chưa đổi.';
+    return 'Studionet marked the transaction CANCELED. Refresh, then retry only if state is still unchanged.';
   }
   if (low.includes('leader_timeout') || low.includes('validators_timeout')) {
-    return 'Đồng thuận Studionet hết giờ trước khi GenVM xong. Đợi khoảng 30 giây, Làm mới, chỉ gửi lại nếu state chưa đổi.';
+    return 'Studionet consensus timed out before GenVM finished. Wait about 30 seconds, refresh, and resend only if state is still unchanged.';
   }
   if (low.includes('timed out') || low.includes('timeout')) {
-    return 'Hết giờ chờ xác nhận. Nếu MetaMask đã xác nhận, đợi 30 giây rồi Làm mới — chưa gửi lại ngay.';
+    return 'Timed out waiting for confirmation. If MetaMask already confirmed, wait 30 seconds and refresh — do not resend yet.';
   }
-  return msg || 'Giao dịch ghi thất bại.';
+  return msg || 'Write transaction failed.';
 };
 
 const toValueBigInt = (value) => {
@@ -333,16 +333,16 @@ export const sendContractTransaction = async ({
   value = 0n,
 }) => {
   if (typeof window === 'undefined' || !window.ethereum) {
-    throw new Error('Cần MetaMask để ký giao dịch trên GenLayer.');
+    throw new Error('MetaMask is required to sign transactions on GenLayer.');
   }
   if (!isValidContractAddress(to)) {
-    throw new Error('Chưa có địa chỉ contract. Deploy trên GenLayer Studio trước.');
+    throw new Error('Contract address is not configured yet. Deploy on GenLayer Studio first.');
   }
 
   const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
   const sender = toAddress(from) || (accs && accs[0]);
   if (!sender) {
-    throw new Error('Chưa có ví. Kết nối MetaMask để tiếp tục.');
+    throw new Error('No connected wallet. Connect MetaMask to continue.');
   }
 
   await switchToGenlayerStudionet();
@@ -426,7 +426,7 @@ export const waitForContractEffect = async ({
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error(
-    `Hết giờ chờ ${label} cập nhật trên Studionet. Làm mới trang; nếu số liệu vẫn cũ, lệnh GenVM chưa vào — đừng coi là thành công.`
+    `Timed out waiting for ${label} to update on Studionet. Refresh the page. If the values are still the same, the GenVM call did not land.`
   );
 };
 

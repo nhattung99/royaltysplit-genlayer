@@ -26,11 +26,11 @@ export class ErrorBoundary extends React.Component {
         <div className="crash-screen">
           <div className="crash-card">
             <div className="crash-icon"><AlertTriangle size={28} /></div>
-            <h2>Giao diện gặp lỗi</h2>
-            <p>RoyaltySplit đã chặn lỗi để trang không trắng. Tải lại để tiếp tục.</p>
+            <h2>The interface hit an error</h2>
+            <p>RoyaltySplit caught it so the page does not go blank. Reload to continue.</p>
             {this.state.error && <pre className="crash-detail">{String(this.state.error)}</pre>}
             <button className="btn-primary" type="button" onClick={this.handleReset}>
-              <RefreshCw size={16} /> Tải lại
+              <RefreshCw size={16} /> Reload
             </button>
           </div>
         </div>

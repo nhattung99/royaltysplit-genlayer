@@ -70,9 +70,9 @@ function run() {
 
   assert(weiFromField('600') === 600n, 'wei field string');
   assert(weiFromField(1.5) === 0n, 'js number money is rejected');
-  assert(sideLabel(0n, false) === 'Không có', 'zero side');
-  assert(sideLabel(600n, true) === 'Đã chuyển', 'paid side');
-  assert(sideLabel(400n, false) === 'Đang chờ', 'pending side');
+  assert(sideLabel(0n, false) === 'None', 'zero side');
+  assert(sideLabel(600n, true) === 'Paid', 'paid side');
+  assert(sideLabel(400n, false) === 'Pending', 'pending side');
 
   console.log('All RoyaltySplit money tests passed.');
 }

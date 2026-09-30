@@ -6,6 +6,6 @@ export const PERIOD_PRESETS = ['Q3 2026', 'Q4 2026', 'H2 2026', '2026'];
 
 export const URL_HINTS = [
   'Spotify for Artists — trang public stats',
-  'YouTube Analytics công khai, hoặc trang video public',
-  'Trang xếp hạng / chart độc lập',
+  'YouTube public analytics, or a public video page',
+  'An independent chart or ranking page',
 ];

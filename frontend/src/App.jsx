@@ -45,13 +45,13 @@ import { SPLIT_PRESETS, REVENUE_PRESETS, PERIOD_PRESETS, URL_HINTS } from './dat
 const STORAGE_KEY = 'royaltysplit_contract_address';
 
 const STATUS_LABEL = {
-  AWAITING_DEPOSIT: 'Chờ escrow',
-  DEPOSITED: 'Đã escrow',
-  LOW_CONFIDENCE_DISPUTED: 'Độ tin cậy thấp',
-  RESOLVED: 'Đã chia',
-  DATA_DISPUTED_REFUNDED: 'Đã hoàn cho payor',
-  PAYOUT_FAILED: 'Chia lỗi một phần',
-  REFUND_FAILED: 'Hoàn tiền lỗi',
+  AWAITING_DEPOSIT: 'Awaiting escrow',
+  DEPOSITED: 'Escrowed',
+  LOW_CONFIDENCE_DISPUTED: 'Low confidence',
+  RESOLVED: 'Split paid',
+  DATA_DISPUTED_REFUNDED: 'Refunded to payor',
+  PAYOUT_FAILED: 'Partial payout failed',
+  REFUND_FAILED: 'Refund failed',
 };
 
 const loadInitialAddress = () => {
@@ -97,13 +97,13 @@ const cleanUrls = (list) => list.map((u) => String(u || '').trim()).filter(Boole
 
 const outcomeCopy = (row) => {
   const status = String(row?.status || '');
-  if (status === 'RESOLVED') return 'Đã chia đúng % đã ký. AI chỉ xác nhận số liệu hợp lý; số GEN do contract tính.';
-  if (status === 'DATA_DISPUTED_REFUNDED') return 'Số liệu bị đánh giá không hợp lý. Toàn bộ GEN escrow đã hoàn cho payor. Muốn thử lại thì tạo agreement mới.';
-  if (status === 'LOW_CONFIDENCE_DISPUTED') return 'Độ tin cậy dưới 60. GEN vẫn nằm nguyên trong escrow. Bổ sung nguồn rồi xác minh lại.';
-  if (status === 'PAYOUT_FAILED') return 'Một phần chuyển tiền chưa xong. Thử lại chỉ gửi phần còn thiếu, không trả trùng.';
-  if (status === 'REFUND_FAILED') return 'Hoàn tiền cho payor chưa xong. Thử lại chỉ gửi đúng khoản hoàn đó.';
-  if (status === 'DEPOSITED') return 'Đã escrow. Bước tiếp theo là yêu cầu AI xác minh tính hợp lý.';
-  if (status === 'AWAITING_DEPOSIT') return 'Payor chưa gửi GEN doanh thu kỳ này.';
+  if (status === 'RESOLVED') return 'Paid at the signed percentage. The AI only confirmed the figures look plausible. The contract calculated the GEN.';
+  if (status === 'DATA_DISPUTED_REFUNDED') return 'The declared revenue was judged implausible. The full escrow was refunded to the payor. To try again, create a new agreement.';
+  if (status === 'LOW_CONFIDENCE_DISPUTED') return 'Confidence is below 60. The GEN stays in escrow. Add another source, then verify again.';
+  if (status === 'PAYOUT_FAILED') return 'One side of the transfer did not finish. Retry sends only the missing part. It does not pay twice.';
+  if (status === 'REFUND_FAILED') return 'The payor refund did not finish. Retry sends only that refund.';
+  if (status === 'DEPOSITED') return 'Escrow is in. Next, ask the AI to check whether the declared revenue is plausible.';
+  if (status === 'AWAITING_DEPOSIT') return 'The payor has not escrowed this period’s revenue yet.';
   return status;
 };
 
@@ -122,26 +122,26 @@ function SplitBreakdown({ declaredWei, bps, row }) {
   return (
     <div className="split-box">
       <div className="split-head">
-        <span>Phần chia đã ký</span>
-        <b>{artistPct}% nghệ sĩ · {payorPct}% payor</b>
+        <span>Signed split</span>
+        <b>{artistPct}% artist · {payorPct}% payor</b>
       </div>
       <div className="split-grid">
         <div>
-          <span>Nghệ sĩ nhận</span>
+          <span>Artist receives</span>
           <strong>{formatWeiToGen(artistAmount)} GEN</strong>
-          <em>{row ? sideLabel(artistAmount, Boolean(row.artist_paid)) : 'Xem trước'}</em>
+          <em>{row ? sideLabel(artistAmount, Boolean(row.artist_paid)) : 'Preview'}</em>
         </div>
         <div>
-          <span>Payor giữ lại</span>
+          <span>Payor keeps</span>
           <strong>{formatWeiToGen(payorAmount)} GEN</strong>
-          <em>{row ? sideLabel(payorAmount, Boolean(row.payor_share_returned)) : 'Xem trước'}</em>
+          <em>{row ? sideLabel(payorAmount, Boolean(row.payor_share_returned)) : 'Preview'}</em>
         </div>
       </div>
       {disputed && declaredWei > 0n && (
-        <p className="hint">Khoản thực chuyển khi DATA_DISPUTED là hoàn đủ {formatWeiToGen(declaredWei)} GEN cho payor, không chia theo %.</p>
+        <p className="hint">On DATA_DISPUTED the contract refunds the full {formatWeiToGen(declaredWei)} GEN to the payor. It does not apply the percentage.</p>
       )}
-      {mismatch && <p className="hint warn-text">Số trên contract lệch với preview BigInt cục bộ. Làm mới trước khi ký thêm giao dịch.</p>}
-      <p className="hint">Số GEN này là phép chia số nguyên (total × bps ÷ 10000). AI không tính ra số này.</p>
+      {mismatch && <p className="hint warn-text">The on-chain amounts differ from the local BigInt preview. Refresh before signing another transaction.</p>}
+      <p className="hint">These GEN amounts are integer division (total × bps ÷ 10000). The AI does not calculate them.</p>
     </div>
   );
 }
@@ -188,7 +188,7 @@ export default function App() {
 
   const connectWallet = async () => {
     if (typeof window === 'undefined' || !window.ethereum) {
-      setTxMessage({ status: 'error', title: 'Cần MetaMask', detail: 'Cài MetaMask để dùng RoyaltySplit trên Studionet.' });
+      setTxMessage({ status: 'error', title: 'MetaMask required', detail: 'Install MetaMask to use RoyaltySplit on Studionet.' });
       return;
     }
     try {
@@ -196,7 +196,7 @@ export default function App() {
       const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
       setAccount(accs[0]);
     } catch (err) {
-      setTxMessage({ status: 'error', title: 'Không kết nối được ví', detail: err.message || String(err) });
+      setTxMessage({ status: 'error', title: 'Wallet connection failed', detail: err.message || String(err) });
     }
   };
 
@@ -204,24 +204,24 @@ export default function App() {
     try {
       const text = (await navigator.clipboard.readText() || '').trim();
       if (!text) {
-        setTxMessage({ status: 'error', title: 'Clipboard trống', detail: 'Sao chép nội dung rồi bấm dán lại.' });
+        setTxMessage({ status: 'error', title: 'Clipboard is empty', detail: 'Copy something, then paste again.' });
         return;
       }
       apply(text);
     } catch (err) {
-      setTxMessage({ status: 'error', title: 'Không đọc được clipboard', detail: err.message || String(err) });
+      setTxMessage({ status: 'error', title: 'Could not read the clipboard', detail: err.message || String(err) });
     }
   };
 
   const saveAddress = (value) => {
     const next = String(value || '').trim();
     if (!isValidContractAddress(next)) {
-      setTxMessage({ status: 'error', title: 'Địa chỉ contract không hợp lệ', detail: 'Cần địa chỉ 0x dài 40 ký tự hex, sau khi Studio báo Result: SUCCESS.' });
+      setTxMessage({ status: 'error', title: 'Invalid contract address', detail: 'Use a 0x address with 40 hex characters from a Studio deployment whose result is SUCCESS.' });
       return;
     }
     setContractAddress(next);
     try { localStorage.setItem(STORAGE_KEY, next); } catch { /* ignore */ }
-    setTxMessage({ status: 'success', title: 'Đã gắn contract Studionet', detail: next });
+    setTxMessage({ status: 'success', title: 'Studionet contract saved', detail: next });
   };
 
   const loadAgreements = useCallback(async () => {
@@ -253,16 +253,16 @@ export default function App() {
   const readAgreement = async (id) => readContractState('get_agreement', [String(id)], contractAddress, account);
 
   const runWrite = async (title, functionName, args, value = 0n, { ai = false, agreementId = null, confirm = null } = {}) => {
-    if (!hasContract) throw new Error('Chưa có địa chỉ contract.');
-    if (!account) throw new Error('Kết nối MetaMask trước.');
+    if (!hasContract) throw new Error('Contract address is not configured yet.');
+    if (!account) throw new Error('Connect MetaMask first.');
     setBusy(true);
     if (ai) setResolvingId(agreementId);
     setTxMessage({
       status: ai ? 'consensus' : 'pending',
-      title: ai ? 'Đang chờ đồng thuận AI…' : `Đang gửi: ${title}`,
+      title: ai ? 'Waiting for AI consensus…' : `Submitting ${title}`,
       detail: ai
-        ? 'AI chỉ trả DATA_PLAUSIBLE hoặc DATA_DISPUTED. Phép chia % chạy sau đó, trong contract, giống nhau trên mọi validator.'
-        : 'Xác nhận trong MetaMask trên GenLayer Studionet. Giữ tab này mở.',
+        ? 'The AI returns only DATA_PLAUSIBLE or DATA_DISPUTED. The percentage split runs afterward, in the contract, and is identical on every validator.'
+        : 'Confirm in MetaMask on GenLayer Studionet. Keep this tab open.',
     });
     let hash = '';
     try {
@@ -276,16 +276,16 @@ export default function App() {
       });
       setTxMessage({
         status: ai ? 'consensus' : 'pending',
-        title: `${title} đã gửi`,
-        detail: 'Đang chờ Studionet + GenVM…',
+        title: `${title} submitted`,
+        detail: 'Waiting for Studionet and GenVM…',
         hash,
       });
       const receipt = await waitForFinalizedTx(hash, ai ? 90 : 60, ai ? 4000 : 3000);
       if (receipt?.pending) {
         setTxMessage({
           status: 'pending',
-          title: `${title}: đang đối chiếu storage…`,
-          detail: receipt.warning || 'Receipt chậm — kiểm tra state contract thay vì gửi lại ngay.',
+          title: `${title}: checking contract storage…`,
+          detail: receipt.warning || 'The receipt is slow. Check contract state instead of sending again right away.',
           hash,
         });
       }
@@ -306,7 +306,7 @@ export default function App() {
       return { hash, row };
     } catch (err) {
       const detail = formatWriteError(err) || err.message || String(err);
-      setTxMessage({ status: 'error', title: `${title} thất bại`, detail, hash: hash || undefined });
+      setTxMessage({ status: 'error', title: `${title} failed`, detail, hash: hash || undefined });
       try { await loadAgreements(); } catch { /* ignore */ }
       throw err;
     } finally {
@@ -321,28 +321,28 @@ export default function App() {
     const periodLabel = period.trim();
     const refs = cleanUrls(urls);
     if (!isEthAddress(artistAddr)) {
-      setTxMessage({ status: 'error', title: 'Thiếu địa chỉ nghệ sĩ', detail: 'Dán địa chỉ ví nghệ sĩ (0x, 40 hex).' });
+      setTxMessage({ status: 'error', title: 'Artist address required', detail: 'Paste the artist wallet address (0x, 40 hex characters).' });
       return;
     }
     if (account && sameAddress(account, artistAddr)) {
-      setTxMessage({ status: 'error', title: 'Trùng ví', detail: 'Payor và nghệ sĩ phải là hai địa chỉ khác nhau.' });
+      setTxMessage({ status: 'error', title: 'Same wallet', detail: 'The payor and the artist must be two different addresses.' });
       return;
     }
     if (!desc) {
-      setTxMessage({ status: 'error', title: 'Thiếu mô tả', detail: 'Ghi ngắn thỏa thuận, ví dụ tên track và kỳ.' });
+      setTxMessage({ status: 'error', title: 'Description required', detail: 'Write a short agreement, for example the track name and period.' });
       return;
     }
     if (!periodLabel) {
-      setTxMessage({ status: 'error', title: 'Thiếu kỳ', detail: 'Chọn một kỳ thanh toán.' });
+      setTxMessage({ status: 'error', title: 'Period required', detail: 'Choose a payment period.' });
       return;
     }
     if (refs.length < 2) {
-      setTxMessage({ status: 'error', title: 'Thiếu nguồn', detail: 'Cần ít nhất 2 URL công khai độc lập.' });
+      setTxMessage({ status: 'error', title: 'Sources required', detail: 'Add at least two independent public URLs.' });
       return;
     }
     try {
       const result = await runWrite(
-        'Tạo thỏa thuận',
+        'Create agreement',
         'create_agreement',
         [artistAddr, desc, BigInt(bps), periodLabel, refs],
         0n,
@@ -366,8 +366,8 @@ export default function App() {
       const newId = beforeCount === undefined || beforeCount === null ? '' : String(beforeCount);
       setTxMessage({
         status: 'success',
-        title: newId !== '' ? `Đã tạo agreement #${newId}` : 'Đã tạo thỏa thuận',
-        detail: 'Gửi link cho nghệ sĩ xem trước, rồi escrow doanh thu kỳ.',
+        title: newId !== '' ? `Created agreement #${newId}` : 'Agreement created',
+        detail: 'Share the link with the artist, then escrow this period’s revenue.',
         hash: result.hash,
       });
       setDescription('');
@@ -385,19 +385,19 @@ export default function App() {
     const wei = parseGenToWei(gen);
     const splitBps = String(row.artist_split_bps);
     if (wei <= 0n) {
-      setTxMessage({ status: 'error', title: 'Số GEN không hợp lệ', detail: 'Chọn hoặc nhập doanh thu kỳ lớn hơn 0.' });
+      setTxMessage({ status: 'error', title: 'Invalid GEN amount', detail: 'Choose or enter period revenue greater than 0.' });
       return;
     }
     if (!splitBothPositive(wei, splitBps)) {
       setTxMessage({
         status: 'error',
-        title: 'Số quá nhỏ để chia',
-        detail: 'Với % này, một bên sẽ nhận 0 sau phép chia số nguyên. Tăng số GEN.',
+        title: 'Amount too small to split',
+        detail: 'At this percentage, integer division would pay one side 0. Increase the GEN amount.',
       });
       return;
     }
     try {
-      const result = await runWrite('Escrow doanh thu kỳ', 'deposit_revenue', [id], wei, {
+      const result = await runWrite('Escrow period revenue', 'deposit_revenue', [id], wei, {
         agreementId: id,
         confirm: {
           readBefore: async () => readAgreement(id),
@@ -407,8 +407,8 @@ export default function App() {
       });
       setTxMessage({
         status: 'success',
-        title: `Đã escrow agreement #${id}`,
-        detail: `${formatWeiToGen(wei)} GEN đang nằm trong contract.`,
+        title: `Escrowed agreement #${id}`,
+        detail: `${formatWeiToGen(wei)} GEN is now in the contract.`,
         hash: result.hash,
       });
     } catch {
@@ -420,7 +420,7 @@ export default function App() {
     const id = String(row.agreement_id);
     const beforeFp = fingerprint(row);
     try {
-      const result = await runWrite('Yêu cầu AI xác minh tính hợp lý', 'resolve_agreement', [id], 0n, {
+      const result = await runWrite('Ask the AI to check plausibility', 'resolve_agreement', [id], 0n, {
         ai: true,
         agreementId: id,
         confirm: {
@@ -432,7 +432,7 @@ export default function App() {
       const latest = await readAgreement(id);
       setTxMessage({
         status: latest?.status === 'PAYOUT_FAILED' || latest?.status === 'REFUND_FAILED' ? 'error' : 'success',
-        title: `${STATUS_LABEL[latest?.status] || latest?.status || 'Đã xác minh'} · #${id}`,
+        title: `${STATUS_LABEL[latest?.status] || latest?.status || 'Checked'} · #${id}`,
         detail: outcomeCopy(latest),
         hash: result.hash,
       });
@@ -445,7 +445,7 @@ export default function App() {
     const id = String(row.agreement_id);
     const beforeFp = fingerprint(row);
     try {
-      const result = await runWrite('Thử lại phần còn thiếu', 'retry_resolution', [id], 0n, {
+      const result = await runWrite('Retry the missing transfer', 'retry_resolution', [id], 0n, {
         agreementId: id,
         confirm: {
           readBefore: async () => beforeFp,
@@ -456,7 +456,7 @@ export default function App() {
       const latest = await readAgreement(id);
       setTxMessage({
         status: latest?.status === 'RESOLVED' || latest?.status === 'DATA_DISPUTED_REFUNDED' ? 'success' : 'error',
-        title: `${STATUS_LABEL[latest?.status] || 'Đã thử lại'} · #${id}`,
+        title: `${STATUS_LABEL[latest?.status] || 'Retried'} · #${id}`,
         detail: outcomeCopy(latest),
         hash: result.hash,
       });
@@ -469,12 +469,12 @@ export default function App() {
     const id = String(row.agreement_id);
     const extra = cleanUrls(evidenceDrafts[id] || ['']);
     if (extra.length < 1) {
-      setTxMessage({ status: 'error', title: 'Thiếu nguồn mới', detail: 'Dán ít nhất một URL bổ sung.' });
+      setTxMessage({ status: 'error', title: 'New source required', detail: 'Paste at least one additional URL.' });
       return;
     }
     const beforeCount = Array.isArray(row.reference_urls) ? row.reference_urls.length : 0;
     try {
-      const result = await runWrite('Bổ sung nguồn', 'add_more_evidence', [id, extra], 0n, {
+      const result = await runWrite('Add sources', 'add_more_evidence', [id, extra], 0n, {
         agreementId: id,
         confirm: {
           readBefore: async () => beforeCount,
@@ -488,8 +488,8 @@ export default function App() {
       setEvidenceDrafts((prev) => ({ ...prev, [id]: [''] }));
       setTxMessage({
         status: 'success',
-        title: `Đã thêm nguồn cho #${id}`,
-        detail: 'GEN escrow không đổi. Có thể yêu cầu AI xác minh lại.',
+        title: `Added sources to #${id}`,
+        detail: 'Escrowed GEN is unchanged. You can ask the AI to check again.',
         hash: result.hash,
       });
     } catch {
@@ -502,9 +502,9 @@ export default function App() {
     url.searchParams.set('agreement', String(id));
     try {
       await navigator.clipboard.writeText(url.toString());
-      setTxMessage({ status: 'success', title: `Đã chép link agreement #${id}`, detail: url.toString() });
+      setTxMessage({ status: 'success', title: `Copied link for agreement #${id}`, detail: url.toString() });
     } catch (err) {
-      setTxMessage({ status: 'error', title: 'Không chép được link', detail: err.message || url.toString() });
+      setTxMessage({ status: 'error', title: 'Could not copy the link', detail: err.message || url.toString() });
     }
   };
 
@@ -518,7 +518,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="free-banner">
-        Miễn phí sử dụng — chỉ tốn phí gas mạng GenLayer khi ký giao dịch. Không có phí nền tảng nào khác.
+        Free to use. You only pay GenLayer network gas when you sign a transaction. There is no other platform fee.
       </div>
 
       <header className="header">
@@ -526,7 +526,7 @@ export default function App() {
           <div className="brand-mark"><Music size={22} /></div>
           <div>
             <h1>RoyaltySplit</h1>
-            <p>Chia doanh thu streaming theo % đã ký. AI chỉ xét tính hợp lý.</p>
+            <p>Split streaming revenue at a signed percentage. The AI only judges plausibility.</p>
           </div>
         </div>
         <div className="header-right">
@@ -534,7 +534,7 @@ export default function App() {
           {account ? (
             <button className="btn-secondary" type="button" onClick={connectWallet}>{shortAddr(account)}</button>
           ) : (
-            <button className="btn-primary" type="button" onClick={connectWallet}><Wallet size={16} /> Kết nối MetaMask</button>
+            <button className="btn-primary" type="button" onClick={connectWallet}><Wallet size={16} /> Connect MetaMask</button>
           )}
         </div>
       </header>
@@ -543,18 +543,18 @@ export default function App() {
         <div className="missing-banner">
           <AlertTriangle size={18} />
           <div>
-            <strong>Chưa có địa chỉ contract.</strong>
-            <p>Deploy <code>contracts/royalty_split.py</code> trên GenLayer Studio, xác nhận <code>Result: SUCCESS</code>, rồi dán địa chỉ vào đây hoặc set <code>VITE_CONTRACT_ADDRESS</code>. Trang vẫn dùng được để xem form — không có giao dịch nào được gửi.</p>
+            <strong>No contract address yet.</strong>
+            <p>Deploy <code>contracts/royalty_split.py</code> on GenLayer Studio, confirm <code>Result: SUCCESS</code>, then paste the address here or set <code>VITE_CONTRACT_ADDRESS</code>. The form still loads. No transaction is sent.</p>
             {!envLocked && (
               <div className="url-row">
                 <input
                   className="input"
-                  placeholder="0x… địa chỉ contract Studionet"
+                  placeholder="0x… Studionet contract address"
                   value={addressDraft}
                   onChange={(e) => setAddressDraft(e.target.value.trim())}
                 />
                 <button className="btn-ghost" type="button" onClick={() => pasteInto(setAddressDraft)}><ClipboardPaste size={16} /></button>
-                <button className="btn-secondary" type="button" onClick={() => saveAddress(addressDraft)}>Gắn</button>
+                <button className="btn-secondary" type="button" onClick={() => saveAddress(addressDraft)}>Save</button>
               </div>
             )}
           </div>
@@ -569,7 +569,7 @@ export default function App() {
             <p>{txMessage.detail}</p>
             {txMessage.hash && (
               <a href={txExplorerUrl(txMessage.hash)} target="_blank" rel="noreferrer">
-                Xem giao dịch <ExternalLink size={12} />
+                View transaction <ExternalLink size={12} />
               </a>
             )}
           </div>
@@ -577,30 +577,30 @@ export default function App() {
       )}
 
       <section className="steps">
-        <article><b>1</b><span>% cố định lúc ký, không do AI quyết.</span></article>
-        <article><b>2</b><span>Payor tự khai doanh thu và escrow đúng số GEN.</span></article>
-        <article><b>3</b><span>AI chỉ nói hợp lý hoặc không. Contract chia bằng số nguyên.</span></article>
+        <article><b>1</b><span>The percentage is fixed at signing. The AI does not choose it.</span></article>
+        <article><b>2</b><span>The payor declares revenue and escrows that exact GEN amount.</span></article>
+        <article><b>3</b><span>The AI only says plausible or not. The contract splits with integers.</span></article>
       </section>
 
       <div className="tabs">
-        <button className={tab === 'create' ? 'tab active' : 'tab'} type="button" onClick={() => setTab('create')}>Tạo thỏa thuận</button>
+        <button className={tab === 'create' ? 'tab active' : 'tab'} type="button" onClick={() => setTab('create')}>Create agreement</button>
         <button className={tab === 'agreements' ? 'tab active' : 'tab'} type="button" onClick={() => setTab('agreements')}>
-          Thỏa thuận {hasContract ? `(${agreements.length})` : ''}
+          Agreements {hasContract ? `(${agreements.length})` : ''}
         </button>
       </div>
 
       {tab === 'create' && (
         <section className="card">
-          <h2><ShieldCheck size={18} /> Một kỳ, một agreement</h2>
-          <p className="hint">Mỗi thỏa thuận là một kỳ thanh toán. Hợp tác nhiều kỳ thì tạo agreement mới và nhập lại % đã ký.</p>
+          <h2><ShieldCheck size={18} /> One period, one agreement</h2>
+          <p className="hint">Each agreement covers a single payment period. For another period, create a new agreement and enter the signed percentage again.</p>
 
-          <label className="label">Địa chỉ ví nghệ sĩ</label>
+          <label className="label">Artist wallet address</label>
           <div className="url-row">
             <input className="input" value={artist} placeholder="0x…" onChange={(e) => setArtist(e.target.value.trim())} />
-            <button className="btn-ghost" type="button" onClick={() => pasteInto(setArtist)}><ClipboardPaste size={16} /> Dán</button>
+            <button className="btn-ghost" type="button" onClick={() => pasteInto(setArtist)}><ClipboardPaste size={16} /> Paste</button>
           </div>
 
-          <label className="label">Mô tả thỏa thuận</label>
+          <label className="label">Agreement description</label>
           <textarea
             className="input textarea"
             maxLength={800}
@@ -609,7 +609,7 @@ export default function App() {
             onChange={(e) => setDescription(e.target.value)}
           />
 
-          <label className="label">Phần nghệ sĩ nhận: {parseSplitPercent(splitPercent)}% · payor giữ {payorPercent}% · {bps} bps</label>
+          <label className="label">Artist receives {parseSplitPercent(splitPercent)}% · payor keeps {payorPercent}% · {bps} bps</label>
           <div className="chips">
             {SPLIT_PRESETS.map((pct) => (
               <button
@@ -632,7 +632,7 @@ export default function App() {
             onChange={(e) => setSplitPercent(parseSplitPercent(e.target.value))}
           />
 
-          <label className="label">Kỳ thanh toán</label>
+          <label className="label">Payment period</label>
           <div className="chips">
             {PERIOD_PRESETS.map((item) => (
               <button
@@ -647,7 +647,7 @@ export default function App() {
           </div>
           <input className="input" value={period} maxLength={64} onChange={(e) => setPeriod(e.target.value)} />
 
-          <label className="label">Nguồn số liệu công khai (tối thiểu 2)</label>
+          <label className="label">Public data sources (at least 2)</label>
           <p className="hint">{URL_HINTS.join(' · ')}</p>
           {urls.map((url, index) => (
             <div className="url-row" key={`url-${index}`}>
@@ -678,26 +678,26 @@ export default function App() {
             </div>
           ))}
           {urls.length < 8 && (
-            <button className="btn-ghost" type="button" onClick={() => setUrls(urls.concat(['']))}><Plus size={16} /> Thêm nguồn</button>
+            <button className="btn-ghost" type="button" onClick={() => setUrls(urls.concat(['']))}><Plus size={16} /> Add source</button>
           )}
 
           <button className="btn-primary full create-btn" type="button" disabled={!hasContract || busy || !account} onClick={handleCreate}>
-            Tạo thỏa thuận
+            Create agreement
           </button>
-          {!account && <p className="hint">Kết nối ví payor để ký. Nghệ sĩ dùng một ví khác.</p>}
+          {!account && <p className="hint">Connect the payor wallet to sign. The artist uses a different wallet.</p>}
         </section>
       )}
 
       {tab === 'agreements' && (
         <section>
           <div className="card-header">
-            <h2>Các kỳ đã tạo</h2>
+            <h2>Agreements</h2>
             <button className="btn-ghost" type="button" onClick={() => loadAgreements()} disabled={!hasContract || busy}>
-              <RefreshCw size={16} /> Làm mới
+              <RefreshCw size={16} /> Refresh
             </button>
           </div>
-          {!hasContract && <p className="hint">Chưa đọc được contract vì chưa có địa chỉ.</p>}
-          {hasContract && agreements.length === 0 && <p className="hint">Chưa có agreement nào trên contract này.</p>}
+          {!hasContract && <p className="hint">The contract cannot be read until an address is set.</p>}
+          {hasContract && agreements.length === 0 && <p className="hint">No agreements on this contract yet.</p>}
           <div className="agreement-list">
             {visibleAgreements.map((row) => {
               const id = String(row.agreement_id);
@@ -719,11 +719,11 @@ export default function App() {
                     </div>
                     <span className={`badge ${statusClass(row.status)}`}>{STATUS_LABEL[row.status] || row.status}</span>
                   </div>
-                  <p className="mono">Payor {shortAddr(row.payor)} · Nghệ sĩ {shortAddr(row.artist)} · {formatBpsAsPercent(splitBps)}% nghệ sĩ</p>
+                  <p className="mono">Payor {shortAddr(row.payor)} · Artist {shortAddr(row.artist)} · {formatBpsAsPercent(splitBps)}% artist</p>
                   <p className="hint">{outcomeCopy(row)}</p>
                   {row.verdict && (
                     <div className="reason">
-                      <strong>{row.verdict}</strong> · độ tin cậy {row.confidence}/100
+                      <strong>{row.verdict}</strong> · confidence {row.confidence}/100
                       <p>{row.verdict_reason}</p>
                     </div>
                   )}
@@ -745,12 +745,12 @@ export default function App() {
                   {resolvingId === id && (
                     <div className="loading-panel">
                       <Loader2 className="spin" size={18} />
-                      <p>AI đang đọc nguồn công khai và đánh giá tính hợp lý. AI không tính số tiền — giữ tab này mở.</p>
+                      <p>The AI is reading public sources and judging plausibility. It is not calculating money. Keep this tab open.</p>
                     </div>
                   )}
 
                   <div className="row-actions">
-                    <button className="btn-ghost" type="button" onClick={() => shareAgreement(id)}><Share2 size={16} /> Chia sẻ cho nghệ sĩ</button>
+                    <button className="btn-ghost" type="button" onClick={() => shareAgreement(id)}><Share2 size={16} /> Share with the artist</button>
                     {row.status === 'AWAITING_DEPOSIT' && isPayor && (
                       <>
                         <div className="chips">
@@ -768,18 +768,18 @@ export default function App() {
                         <input
                           className="input"
                           inputMode="decimal"
-                          placeholder="Doanh thu kỳ (GEN)"
+                          placeholder="Period revenue (GEN)"
                           value={depositGen}
                           onChange={(e) => setDepositDrafts((prev) => ({ ...prev, [id]: sanitizeGenInput(e.target.value) }))}
                         />
                         <button className="btn-primary" type="button" disabled={busy} onClick={() => handleDeposit(row)}>
-                          <Coins size={16} /> Escrow doanh thu kỳ
+                          <Coins size={16} /> Escrow period revenue
                         </button>
                       </>
                     )}
                     {(row.status === 'DEPOSITED' || row.status === 'LOW_CONFIDENCE_DISPUTED') && (
                       <button className="btn-ai" type="button" disabled={busy || !account} onClick={() => handleResolve(row)}>
-                        <Sparkles size={16} /> Yêu cầu AI xác minh tính hợp lý
+                        <Sparkles size={16} /> Ask the AI to check plausibility
                       </button>
                     )}
                     {row.status === 'LOW_CONFIDENCE_DISPUTED' && isParty && (
@@ -788,7 +788,7 @@ export default function App() {
                           <div className="url-row" key={`${id}-ev-${index}`}>
                             <input
                               className="input"
-                              placeholder="URL nguồn bổ sung"
+                              placeholder="Additional source URL"
                               value={url}
                               onChange={(e) => {
                                 const next = evidence.slice();
@@ -810,13 +810,13 @@ export default function App() {
                           </div>
                         ))}
                         <button className="btn-secondary" type="button" disabled={busy} onClick={() => handleAddEvidence(row)}>
-                          Bổ sung nguồn
+                          Add sources
                         </button>
                       </>
                     )}
                     {(row.status === 'PAYOUT_FAILED' || row.status === 'REFUND_FAILED') && isParty && (
                       <button className="btn-primary" type="button" disabled={busy} onClick={() => handleRetry(row)}>
-                        <RotateCcw size={16} /> Thử lại phần còn thiếu
+                        <RotateCcw size={16} /> Retry the missing transfer
                       </button>
                     )}
                   </div>

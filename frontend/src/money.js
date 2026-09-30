@@ -106,8 +106,8 @@ export const splitBothPositive = (declaredWei, artistSplitBps) => {
 };
 
 export const sideLabel = (amountWei, alreadyPaid) => {
-  if (amountWei <= 0n) return 'Không có';
-  return alreadyPaid ? 'Đã chuyển' : 'Đang chờ';
+  if (amountWei <= 0n) return 'None';
+  return alreadyPaid ? 'Paid' : 'Pending';
 };
 
 export { WEI_PER_GEN };

@@ -1,91 +1,95 @@
 # RoyaltySplit
 
-Chia doanh thu streaming theo % đã ký. Payor tự khai tổng doanh thu kỳ và escrow đúng số GEN. AI chỉ trả lời số liệu đó **có hợp lý hay không**. Số tiền mỗi bên nhận do contract tính bằng số nguyên, ngoài khối đồng thuận AI.
+A payor escrows self-declared streaming revenue in GEN. GenLayer’s AI only judges whether that figure is plausible against public sources. The signed percentage is split with integer math in the contract, outside AI consensus.
 
-> RoyaltySplit chết nếu không có GenLayer: không có smart contract EVM nào đọc hiểu được số liệu streaming công khai phi cấu trúc để đánh giá tính hợp lý của doanh thu tự khai, và không có bên kiểm toán nào đủ rẻ để xác minh hàng loạt thoả thuận chia doanh thu nhỏ giữa nghệ sĩ độc lập — chỉ có đồng thuận AI phi tập trung của GenLayer mới làm được với chi phí gần bằng 0, trong khi phần tính tiền vẫn giữ được độ chính xác tuyệt đối của smart contract thường.
+> RoyaltySplit needs GenLayer: no EVM smart contract can read unstructured public streaming data well enough to judge whether a self-reported revenue figure is plausible, and no auditor is cheap enough to check a large number of small independent-artist splits. Only GenLayer’s decentralized AI consensus can do that at near-zero cost, while the money math stays as exact as an ordinary smart contract.
 
-## Bài toán
+## The problem
 
-Nhạc sĩ và label/distributor ký % chia cố định (ví dụ 60/40). Số liệu doanh thu mỗi kỳ thường chỉ do bên giữ tài khoản nền tảng tự báo cáo. Nghệ sĩ không có cách rẻ để kiểm chứng con số đó có bị khai thấp hay không.
+An artist and a label or distributor agree a fixed split, for example 60/40. The period’s actual revenue is usually reported by the one party who holds the platform account. The artist has no cheap way to check whether that number was understated.
 
-## Vì sao AI không tự tính %
+## Why the AI does not calculate the percentage
 
-JobVerdict bị từ chối vì **AI tự tính điểm % rồi dùng chính điểm đó (có dung sai) để suy ra số tiền thanh toán** — 2 validator "đồng thuận" nhưng chốt 2 số tiền khác nhau. RoyaltySplit **không bao giờ để AI tính hay quyết định con số tiền nào cả** — AI chỉ trả lời "có/không" về tính hợp lý của số liệu; phép chia % thật sự diễn ra ở code Python thường (không phải trong `leader_fn`/`validator_fn`), chạy y hệt nhau trên mọi validator vì đó là code xác định (deterministic), không phải kết quả từ LLM.
+JobVerdict was rejected because the AI computed a percentage score and that tolerant score was then turned into a payment. Two validators could “agree” and still settle two different amounts. RoyaltySplit never lets the AI calculate or decide any amount of money. The AI only answers yes or no on whether the declared data is plausible. The real percentage split runs in ordinary Python, not inside `leader_fn` or `validator_fn`. Every validator executes that same deterministic code, so the result is exact. It is not an LLM output.
 
-Luồng:
+Flow:
 
-1. Lúc tạo agreement, hai bên chốt `artist_split_bps` (1–9999). Con số này không đổi và không phải output của AI.
-2. Payor khai `declared_revenue_amount` bằng cách gửi kèm đúng số GEN (`gl.message.value`).
-3. `gl.vm.run_nondet` chỉ trả `DATA_PLAUSIBLE` hoặc `DATA_DISPUTED`, kèm confidence. Validator chỉ so nhãn verdict và việc confidence có vượt ngưỡng 60 hay không. Không có dung sai trên số tiền.
-4. Confidence dưới 60 → `LOW_CONFIDENCE_DISPUTED`. GEN nằm nguyên trong escrow. Bổ sung nguồn rồi resolve lại.
-5. `DATA_DISPUTED` và confidence ≥ 60 → hoàn toàn bộ số đã escrow cho payor.
-6. `DATA_PLAUSIBLE` và confidence ≥ 60 → `_execute_split_settlement` (ngoài `run_nondet`):
+1. When the agreement is created, the parties fix `artist_split_bps` (1–9999). That number does not change, and it is not an AI output.
+2. The payor declares `declared_revenue_amount` by attaching that exact GEN amount (`gl.message.value`).
+3. `gl.vm.run_nondet` returns only `DATA_PLAUSIBLE` or `DATA_DISPUTED`, plus a confidence score. Validators must match the verdict label and whether confidence clears 60. There is no tolerance on the money amount.
+4. Confidence below 60 sets `LOW_CONFIDENCE_DISPUTED`. GEN stays in escrow. Add sources, then resolve again.
+5. `DATA_DISPUTED` with confidence at least 60 refunds the full escrow to the payor.
+6. `DATA_PLAUSIBLE` with confidence at least 60 calls `_execute_split_settlement`, outside `run_nondet`:
 
 ```text
 artist_amount = (declared_revenue_amount * artist_split_bps) // 10000
 payor_share   = declared_revenue_amount - artist_amount
 ```
 
-Phần dư của phép chia nguyên nằm ở payor. Tổng hai bên luôn bằng đúng số đã escrow.
+The remainder of the integer division stays with the payor. The two sides always sum to the escrowed amount.
 
-## Giới hạn MVP
+## MVP limit
 
-Mỗi `RoyaltyAgreement` là **một kỳ thanh toán duy nhất**, không phải hợp đồng lặp nhiều kỳ. Hợp tác nhiều kỳ thì tạo agreement mới và nhập lại % đã thỏa. Cơ chế lặp nhiều kỳ có thể làm ở milestone sau.
+Each `RoyaltyAgreement` is **one payment period**, not a contract that repeats automatically. For another period, create a new agreement and enter the agreed percentage again. A repeating multi-period contract can come in a later milestone.
 
 ## Contract
 
-Một contract giữ GEN trực tiếp. Payor escrow vào contract. Contract `emit_transfer` cho nghệ sĩ và trả phần còn lại cho payor. Không forward value qua cross-contract call.
+One contract holds the GEN. The payor escrows into the contract. The contract calls `emit_transfer` for the artist and returns the remainder to the payor. Value is not forwarded through a cross-contract call.
 
-| Việc | API |
+| Action | API |
 |---|---|
-| Người gọi | `gl.message.sender_address` |
-| Chuyển GEN | `gl.get_contract_at(recipient).emit_transfer(value=u256(amount))` |
-| Nhận GEN kèm giao dịch | `@gl.public.write` + `gl.message.value` |
-| Map có default | `self.agreements.get(key, None)` |
+| Caller | `gl.message.sender_address` |
+| Send GEN | `gl.get_contract_at(recipient).emit_transfer(value=u256(amount))` |
+| Receive attached GEN | `@gl.public.write` + `gl.message.value` |
+| Map with default | `self.agreements.get(key, None)` |
 
-Header bắt buộc:
+Required header:
 
 ```python
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 ```
 
-Địa chỉ contract Studionet: *(chưa deploy — điền sau `Result: SUCCESS`)*.
+Deploy notes: [scripts/deploy/studionet.md](scripts/deploy/studionet.md).
 
-Cách deploy: [scripts/deploy/studionet.md](scripts/deploy/studionet.md).
+## Deployed Contract
 
-### Trạng thái
+`0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9`
 
-`AWAITING_DEPOSIT` → `DEPOSITED` → một trong:
+https://genlayer-explorer.vercel.app/address/0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9
 
-- `RESOLVED` — đã chia đủ hai bên
-- `DATA_DISPUTED_REFUNDED` — đã hoàn đủ cho payor
-- `LOW_CONFIDENCE_DISPUTED` — tiền giữ nguyên, được thêm nguồn
-- `PAYOUT_FAILED` / `REFUND_FAILED` — `retry_resolution` chỉ gửi phần cờ còn `false`
+### Status
 
-`artist_paid`, `payor_share_returned`, `disputed_refunded` khóa từng nhánh. Retry không trả trùng.
+`AWAITING_DEPOSIT` → `DEPOSITED` → one of:
 
-## Bảng đối chiếu xử lý tiền
+- `RESOLVED` — both sides were paid
+- `DATA_DISPUTED_REFUNDED` — the payor was refunded in full
+- `LOW_CONFIDENCE_DISPUTED` — funds stay put; more sources may be added
+- `PAYOUT_FAILED` / `REFUND_FAILED` — `retry_resolution` sends only the side whose flag is still false
 
-Mọi số GEN đi qua `bigint` / `BigInt`. Không có `float`, `parseFloat`, `Math.round`, `Math.floor`, `Math.ceil` trên giá trị tiền.
+`artist_paid`, `payor_share_returned`, and `disputed_refunded` guard each leg. A retry does not pay twice.
 
-| Chỗ | Hàm | Cách tính | Ghi chú |
+## Money handling
+
+Every GEN amount goes through `bigint` / `BigInt`. There is no `float`, `parseFloat`, `Math.round`, `Math.floor`, or `Math.ceil` on a money value.
+
+| Place | Function | Method | Note |
 |---|---|---|---|
-| Contract | `_split_amounts` | `(total * bps) // 10000`, phần còn lại cho payor | Hàm thuần, **không** gọi từ `leader_fn` / `validator_fn` |
-| Contract | `deposit_revenue` | Cùng `_split_amounts` | Từ chối nếu một bên ra 0 (tránh `emit_transfer` giá trị 0) |
-| Contract | `_execute_split_settlement` | Cùng `_split_amounts`, rồi `emit_transfer` | Chỉ chạy khi verdict đã là `DATA_PLAUSIBLE` |
-| Contract | `_refund_disputed` | Hoàn đúng `declared_revenue_amount` | Không nhân % |
-| Contract | `get_agreement` | Ghi `artist_amount` / `payor_share` bằng `_split_amounts` | Preview trên chain, không phải output AI |
-| Frontend | `parseGenToWei` | Tách chuỗi, ghép 18 chữ số lẻ, `BigInt` | Từ chối ký hiệu khoa học |
-| Frontend | `formatWeiToGen` | `wei / 10^18` và `wei % 10^18` bằng `BigInt` | Chỉ để hiển thị |
-| Frontend | `computeSplitPreview` | `(total * bps) / 10000n` | Cùng công thức contract, chỉ để preview trước khi ký |
-| Frontend | `percentToBps` | Phần trăm nguyên 1–99 nhân 100 | UI basis points, không phải wei |
-| Frontend | `toWeiString` | Chuỗi chữ số hoặc `bigint` | Số JS (`number`) bị bỏ, trả `0` |
-| AI | `leader_fn` | JSON `{verdict, confidence, reason}` | Trường tiền nếu model bịa ra thì `_parse_verdict` bỏ |
+| Contract | `_split_amounts` | `(total * bps) // 10000`, remainder to the payor | Pure function. It is not called from `leader_fn` or `validator_fn`. |
+| Contract | `deposit_revenue` | Same `_split_amounts` | Rejects a deposit that would pay either side 0, so `emit_transfer` is never called with 0. |
+| Contract | `_execute_split_settlement` | Same `_split_amounts`, then `emit_transfer` | Runs only after the verdict is `DATA_PLAUSIBLE`. |
+| Contract | `_refund_disputed` | Refunds `declared_revenue_amount` exactly | Does not apply the percentage. |
+| Contract | `get_agreement` | Writes `artist_amount` and `payor_share` with `_split_amounts` | On-chain preview. Not an AI output. |
+| Frontend | `parseGenToWei` | Split the string, pad 18 fractional digits, `BigInt` | Rejects scientific notation. |
+| Frontend | `formatWeiToGen` | `wei / 10^18` and `wei % 10^18` with `BigInt` | Display only. |
+| Frontend | `computeSplitPreview` | `(total * bps) / 10000n` | Same formula as the contract, for the preview before signing. |
+| Frontend | `percentToBps` | Integer percent 1–99 times 100 | UI basis points, not wei. |
+| Frontend | `toWeiString` | Digit string or `bigint` | A JavaScript `number` is rejected and becomes `0`. |
+| AI | `leader_fn` | JSON `{verdict, confidence, reason}` | If the model invents a money field, `_parse_verdict` drops it. |
 
-Đối chiếu tay đã khóa trong test:
+Hand checks locked in tests:
 
-| declared (base units) | bps | artist | payor | tổng |
+| declared (base units) | bps | artist | payor | total |
 |---|---:|---:|---:|---:|
 | 1000 | 6000 | 600 | 400 | 1000 |
 | 10001 | 6000 | 6000 | 4001 | 10001 |
@@ -93,7 +97,7 @@ Mọi số GEN đi qua `bigint` / `BigInt`. Không có `float`, `parseFloat`, `M
 
 `1000 * 6000 // 10000 = 600`. `10001 * 6000 = 60006000`; `60006000 // 10000 = 6000`; payor = `10001 - 6000 = 4001`.
 
-## Test
+## Tests
 
 ```bash
 gltest tests/test_royalty_split.py
@@ -101,15 +105,15 @@ node scripts/check-no-float-money.js
 npm run test:money
 ```
 
-Kết quả contract (`gltest`, 14 passed): happy path `DATA_PLAUSIBLE` trả đúng 600 cho artist và 400 cho payor; happy path `DATA_DISPUTED` hoàn 1000 cho payor; confidence thấp giữ nguyên escrow rồi bổ sung nguồn và resolve lại; bps ngoài 1–9999 bị chặn; thiếu URL bị chặn; trùng ví bị chặn; deposit lần hai / resolve lần hai bị chặn; deposit 1 wei ở 6000 bps bị chặn vì artist nhận 0; transfer fail riêng artist, riêng payor, cả hai, và refund fail — `retry_resolution` chỉ gửi phần thiếu, không trả trùng.
+Contract suite (`gltest`, 14 passed): the `DATA_PLAUSIBLE` path pays the artist 600 and the payor 400; the `DATA_DISPUTED` path refunds 1000 to the payor; low confidence keeps the escrow, then more sources are added and resolve runs again; basis points outside 1–9999 are rejected; a missing URL is rejected; the same wallet is rejected; a second deposit and a second resolve are rejected; a 1 wei deposit at 6000 bps is rejected because the artist would receive 0; artist-only, payor-only, both-sides, and disputed-refund transfer failures are covered. `retry_resolution` sends only the missing leg and does not pay twice.
 
 ## Frontend
 
-Vite + React. Chain duy nhất: **GenLayer Studionet**.
+Vite + React. The only chain is **GenLayer Studionet**.
 
-Chưa có `VITE_CONTRACT_ADDRESS` thì app hiện banner và không crash. Form vẫn xem được. Giao dịch ghi bị chặn cho tới khi có địa chỉ.
+Without `VITE_CONTRACT_ADDRESS` the app shows a banner and does not crash. The form is still visible. Writes stay disabled until an address is set.
 
-Banner cố định: «Miễn phí sử dụng — chỉ tốn phí gas mạng GenLayer khi ký giao dịch. Không có phí nền tảng nào khác.»
+Fixed banner: “Free to use. You only pay GenLayer network gas when you sign a transaction. There is no other platform fee.”
 
 ```bash
 cd frontend
@@ -117,4 +121,4 @@ npm install
 npm run dev
 ```
 
-Biến môi trường: `frontend/.env` → `VITE_CONTRACT_ADDRESS=0x...`
+Environment: `frontend/.env` → `VITE_CONTRACT_ADDRESS=0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9`
