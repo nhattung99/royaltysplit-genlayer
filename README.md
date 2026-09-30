@@ -52,6 +52,10 @@ Required header:
 
 Deploy notes: [scripts/deploy/studionet.md](scripts/deploy/studionet.md).
 
+## Live App
+
+https://royaltysplit-genlayer.vercel.app
+
 ## Deployed Contract
 
 `0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9`
