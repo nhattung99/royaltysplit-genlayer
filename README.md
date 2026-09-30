@@ -58,9 +58,9 @@ https://royaltysplit-genlayer.vercel.app
 
 ## Deployed Contract
 
-`0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9`
+`0xc1ACd75139a4Dbe78Dfbc3B1969AD495F5c97Aee`
 
-https://genlayer-explorer.vercel.app/address/0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9
+https://genlayer-explorer.vercel.app/address/0xc1ACd75139a4Dbe78Dfbc3B1969AD495F5c97Aee
 
 ### Status
 
@@ -125,4 +125,4 @@ npm install
 npm run dev
 ```
 
-Environment: `frontend/.env` → `VITE_CONTRACT_ADDRESS=0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9`
+Environment: `frontend/.env` → `VITE_CONTRACT_ADDRESS=0xc1ACd75139a4Dbe78Dfbc3B1969AD495F5c97Aee`

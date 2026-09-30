@@ -11,11 +11,11 @@ Use Studionet only. Do not point the app at the Asimov or Bradbury testnets.
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 ```
 
-4. Click **Deploy**. Open the transaction and confirm **`Result: SUCCESS`**. `FINALIZED` alone is not enough.
+4. Click **Deploy**. Open the transaction and confirm **`Result: SUCCESS`**. `FINALIZED` alone is not enough. `deposit_revenue` must stay `@gl.public.write.payable`; a non-payable write rejects the escrow transaction.
 5. Copy the address into `frontend/.env`:
 
 ```
-VITE_CONTRACT_ADDRESS=0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9
+VITE_CONTRACT_ADDRESS=0xc1ACd75139a4Dbe78Dfbc3B1969AD495F5c97Aee
 ```
 
 6. Fund MetaMask from Studio → **Accounts** (not a public testnet faucet).
@@ -23,6 +23,6 @@ VITE_CONTRACT_ADDRESS=0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9
 
 ## Deployed Contract
 
-`0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9`
+`0xc1ACd75139a4Dbe78Dfbc3B1969AD495F5c97Aee`
 
-https://genlayer-explorer.vercel.app/address/0x776059Cf2A125df544e5F52AC5B51F8f8e5F87A9
+https://genlayer-explorer.vercel.app/address/0xc1ACd75139a4Dbe78Dfbc3B1969AD495F5c97Aee
