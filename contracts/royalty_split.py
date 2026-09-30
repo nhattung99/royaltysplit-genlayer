@@ -334,7 +334,8 @@ class Contract(gl.Contract):
         )
         return agreement_id
 
-    @gl.public.write
+    # Studionet rejects non-zero msg.value on a method that is not payable.
+    @gl.public.write.payable
     def deposit_revenue(self, agreement_id: str) -> None:
         if agreement_id not in self.agreements:
             raise UserError("Agreement does not exist")
