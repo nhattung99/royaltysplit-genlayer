@@ -480,6 +480,55 @@ def test_invalid_json_holds_escrow(direct_vm, direct_deploy, direct_accounts, mo
     assert payments == []
 
 
+def test_unreadable_pages_hold_escrow_instead_of_rollback(direct_vm, direct_deploy, direct_accounts, monkeypatch):
+    payor = direct_accounts[1]
+    artist = direct_accounts[2]
+    contract = direct_deploy(CONTRACT_PATH)
+    vm = _active_vm(direct_vm)
+
+    agreement_id = _create(contract, vm, payor, artist)
+    _deposit(contract, vm, payor, agreement_id, DECLARED)
+
+    payments = []
+    _install_recorder(monkeypatch, payments)
+    vm.sender = payor
+    sim_installMocks(vm, web={REF1: "", REF2: "   "}, llm={"verdict": "DATA_PLAUSIBLE", "confidence": 99, "reason": "should not run"})
+    contract.resolve_agreement(agreement_id)
+
+    row = _agreement(contract, agreement_id)
+    assert row["status"] == "LOW_CONFIDENCE_DISPUTED"
+    assert row["confidence"] == 0
+    assert row["verdict"] == ""
+    assert "No reference page could be read" in row["verdict_reason"]
+    assert row["declared_revenue_amount"] == str(DECLARED)
+    assert payments == []
+
+
+def test_one_unreadable_page_still_resolves(direct_vm, direct_deploy, direct_accounts, monkeypatch):
+    payor = direct_accounts[1]
+    artist = direct_accounts[2]
+    contract = direct_deploy(CONTRACT_PATH)
+    vm = _active_vm(direct_vm)
+
+    agreement_id = _create(contract, vm, payor, artist)
+    _deposit(contract, vm, payor, agreement_id, DECLARED)
+    _install_recorder(monkeypatch, [])
+    _resolve(
+        contract,
+        vm,
+        agreement_id,
+        "DATA_DISPUTED",
+        80,
+        "Only one public page loaded",
+        web={REF1: "", REF2: "Wikipedia: the recording has been streamed more than a billion times"},
+        sender=payor,
+    )
+
+    row = _agreement(contract, agreement_id)
+    assert row["status"] == "DATA_DISPUTED_REFUNDED"
+    assert row["verdict"] == "DATA_DISPUTED"
+
+
 def test_plausible_artist_fail_only_then_retry_no_double_pay(direct_vm, direct_deploy, direct_accounts, monkeypatch):
     payor = direct_accounts[1]
     artist = direct_accounts[2]
