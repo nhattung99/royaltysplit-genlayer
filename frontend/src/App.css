@@ -235,6 +235,14 @@ a { color: #ffd7a8; }
   color: #ffe3bf;
   font-size: 0.88rem;
 }
+.evidence-record { margin-top: 0.75rem; display: grid; gap: 0.55rem; }
+.evidence-item { padding: 0.7rem; border: 1px solid var(--line); border-radius: 12px; background: #170f14; }
+.evidence-item a { word-break: break-all; font-size: 0.82rem; }
+.evidence-item .mono { margin-top: 0.25rem; color: var(--sub); font-size: 0.72rem; word-break: break-all; }
+.evidence-item pre {
+  margin-top: 0.4rem; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--mono); font-size: 0.75rem; color: var(--muted); max-height: 9rem; overflow: auto;
+}
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

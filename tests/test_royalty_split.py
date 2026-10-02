@@ -230,14 +230,17 @@ def test_split_amounts_hand_calc_and_validator_is_binary(direct_vm, direct_deplo
     assert int(artist) + int(payor) == DECLARED_REMAINDER
 
     agrees = mod._validator_agrees
-    plausible_high = {"verdict": "DATA_PLAUSIBLE", "confidence": 90, "reason": "ok"}
-    plausible_low = {"verdict": "DATA_PLAUSIBLE", "confidence": 40, "reason": "thin"}
-    disputed_high = {"verdict": "DATA_DISPUTED", "confidence": 88, "reason": "low"}
-    assert agrees(plausible_high, {"verdict": "DATA_PLAUSIBLE", "confidence": 77, "reason": "x"}) is True
+    same_page = [{"url": REF1, "readable": True, "sha256": "abc", "excerpt": "page"}]
+    other_page = [{"url": REF1, "readable": True, "sha256": "def", "excerpt": "different bytes"}]
+    plausible_high = {"verdict": "DATA_PLAUSIBLE", "confidence": 90, "reason": "ok", "evidence": same_page}
+    plausible_low = {"verdict": "DATA_PLAUSIBLE", "confidence": 40, "reason": "thin", "evidence": same_page}
+    disputed_high = {"verdict": "DATA_DISPUTED", "confidence": 88, "reason": "low", "evidence": same_page}
+    assert agrees(plausible_high, {"verdict": "DATA_PLAUSIBLE", "confidence": 77, "reason": "x", "evidence": same_page}) is True
     assert agrees(plausible_high, plausible_low) is False
     assert agrees(plausible_high, disputed_high) is False
-    assert agrees({"verdict": "", "confidence": 0}, {"verdict": "", "confidence": 10}) is True
-    assert agrees({"verdict": "", "confidence": 0}, plausible_high) is False
+    assert agrees(plausible_high, {**plausible_high, "evidence": other_page}) is False
+    assert agrees({"verdict": "", "confidence": 0, "evidence": same_page}, {"verdict": "", "confidence": 10, "evidence": same_page}) is True
+    assert agrees({"verdict": "", "confidence": 0, "evidence": same_page}, plausible_high) is False
 
     parsed = mod._parse_verdict('{"verdict":"DATA_PLAUSIBLE","confidence":91,"reason":"ok","revenue":999999}')
     assert parsed["verdict"] == "DATA_PLAUSIBLE"
@@ -277,7 +280,7 @@ def test_happy_path_plausible_pays_exact_split(direct_vm, direct_deploy, direct_
     assert row["confidence"] == 95
     assert row["artist_paid"] is True
     assert row["payor_share_returned"] is True
-    assert row["disputed_refunded"] is False
+    assert row["dispute_settled"] is False
     assert row["settled"] is True
     assert row["artist_amount"] == str(ARTIST_AMT)
     assert row["payor_share"] == str(PAYOR_AMT)
@@ -311,7 +314,7 @@ def test_remainder_split_is_exact(direct_vm, direct_deploy, direct_accounts, mon
     assert row["payor_share_returned"] is True
 
 
-def test_happy_path_disputed_refunds_payor_in_full(direct_vm, direct_deploy, direct_accounts, monkeypatch):
+def test_happy_path_disputed_pays_artist_in_full(direct_vm, direct_deploy, direct_accounts, monkeypatch):
     payor = direct_accounts[1]
     artist = direct_accounts[2]
     contract = direct_deploy(CONTRACT_PATH)
@@ -325,14 +328,20 @@ def test_happy_path_disputed_refunds_payor_in_full(direct_vm, direct_deploy, dir
     _resolve(contract, vm, agreement_id, "DATA_DISPUTED", 92, "Public streams are far above the declared total", sender=artist)
 
     row = _agreement(contract, agreement_id)
-    assert row["status"] == "DATA_DISPUTED_REFUNDED"
+    assert row["status"] == "DATA_DISPUTED_AWARDED"
     assert row["verdict"] == "DATA_DISPUTED"
-    assert row["disputed_refunded"] is True
-    assert row["artist_paid"] is False
+    assert row["dispute_settled"] is True
+    assert row["artist_paid"] is True
     assert row["payor_share_returned"] is False
     assert row["settled"] is True
+    assert row["settlement_artist"] == str(DECLARED)
+    assert row["settlement_payor"] == "0"
+    assert row["evidence"][0]["url"] == REF1
+    assert row["evidence"][0]["readable"] is True
+    assert row["evidence"][0]["sha256"] == __import__("hashlib").sha256(_default_web()[REF1].encode("utf-8")).hexdigest()
+    assert row["evidence"][0]["excerpt"] == _default_web()[REF1]
     assert [p["amount"] for p in payments] == [DECLARED]
-    assert payments[0]["to"] == _account_addr(payor)
+    assert payments[0]["to"] == _account_addr(artist)
 
 
 def test_low_confidence_holds_escrow_then_reresolve(direct_vm, direct_deploy, direct_accounts, monkeypatch):
@@ -355,7 +364,7 @@ def test_low_confidence_holds_escrow_then_reresolve(direct_vm, direct_deploy, di
     assert row["declared_revenue_amount"] == str(DECLARED)
     assert row["artist_paid"] is False
     assert row["payor_share_returned"] is False
-    assert row["disputed_refunded"] is False
+    assert row["dispute_settled"] is False
     assert row["settled"] is False
     assert payments == []
 
@@ -525,7 +534,7 @@ def test_one_unreadable_page_still_resolves(direct_vm, direct_deploy, direct_acc
     )
 
     row = _agreement(contract, agreement_id)
-    assert row["status"] == "DATA_DISPUTED_REFUNDED"
+    assert row["status"] == "DATA_DISPUTED_AWARDED"
     assert row["verdict"] == "DATA_DISPUTED"
 
 
@@ -645,7 +654,7 @@ def test_plausible_both_fail_then_retry_pays_each_once(direct_vm, direct_deploy,
     assert sum(p["amount"] for p in retry_payments) == DECLARED
 
 
-def test_disputed_refund_fail_then_retry_once(direct_vm, direct_deploy, direct_accounts, monkeypatch):
+def test_disputed_award_fail_then_retry_once(direct_vm, direct_deploy, direct_accounts, monkeypatch):
     payor = direct_accounts[1]
     artist = direct_accounts[2]
     contract = direct_deploy(CONTRACT_PATH)
@@ -659,11 +668,11 @@ def test_disputed_refund_fail_then_retry_once(direct_vm, direct_deploy, direct_a
     _resolve(contract, vm, agreement_id, "DATA_DISPUTED", 96, "Implausible", sender=payor)
 
     row = _agreement(contract, agreement_id)
-    assert row["status"] == "REFUND_FAILED"
-    assert row["disputed_refunded"] is False
+    assert row["status"] == "DISPUTE_PAY_FAILED"
+    assert row["dispute_settled"] is False
     assert row["artist_paid"] is False
     assert row["settled"] is False
-    assert "Disputed refund failed" in row["verdict_reason"]
+    assert "Disputed award failed" in row["verdict_reason"]
     assert payments == []
 
     monkeypatch.undo()
@@ -674,12 +683,12 @@ def test_disputed_refund_fail_then_retry_once(direct_vm, direct_deploy, direct_a
     contract.retry_resolution(agreement_id)
 
     row = _agreement(contract, agreement_id)
-    assert row["status"] == "DATA_DISPUTED_REFUNDED"
-    assert row["disputed_refunded"] is True
+    assert row["status"] == "DATA_DISPUTED_AWARDED"
+    assert row["dispute_settled"] is True
     assert row["settled"] is True
-    assert row["artist_paid"] is False
+    assert row["artist_paid"] is True
     assert [p["amount"] for p in retry_payments] == [DECLARED]
-    assert retry_payments[0]["to"] == _account_addr(payor)
+    assert retry_payments[0]["to"] == _account_addr(artist)
 
     with pytest.raises(Exception):
         contract.retry_resolution(agreement_id)

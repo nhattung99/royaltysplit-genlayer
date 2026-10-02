@@ -49,7 +49,8 @@ const STATUS_LABEL = {
   DEPOSITED: 'Escrowed',
   LOW_CONFIDENCE_DISPUTED: 'Low confidence',
   RESOLVED: 'Split paid',
-  DATA_DISPUTED_REFUNDED: 'Refunded to payor',
+  DATA_DISPUTED_AWARDED: 'Awarded to artist',
+  DISPUTE_PAY_FAILED: 'Dispute payout failed',
   PAYOUT_FAILED: 'Partial payout failed',
   REFUND_FAILED: 'Refund failed',
 };
@@ -75,9 +76,9 @@ const shortAddr = (a) => {
 const statusClass = (status) => {
   const s = String(status || '');
   if (s === 'RESOLVED') return 'badge-ok';
-  if (s === 'DATA_DISPUTED_REFUNDED') return 'badge-warn';
+  if (s === 'DATA_DISPUTED_AWARDED') return 'badge-warn';
   if (s === 'LOW_CONFIDENCE_DISPUTED') return 'badge-warn';
-  if (s === 'PAYOUT_FAILED' || s === 'REFUND_FAILED') return 'badge-bad';
+  if (s === 'PAYOUT_FAILED' || s === 'DISPUTE_PAY_FAILED' || s === 'REFUND_FAILED') return 'badge-bad';
   if (s === 'DEPOSITED') return 'badge-info';
   return 'badge-idle';
 };
@@ -89,7 +90,7 @@ const fingerprint = (row) => [
   row?.verdict_reason,
   row?.artist_paid,
   row?.payor_share_returned,
-  row?.disputed_refunded,
+  row?.dispute_settled,
   row?.declared_revenue_amount,
 ].join('|');
 
@@ -98,7 +99,8 @@ const cleanUrls = (list) => list.map((u) => String(u || '').trim()).filter(Boole
 const outcomeCopy = (row) => {
   const status = String(row?.status || '');
   if (status === 'RESOLVED') return 'Paid at the signed percentage. The AI only confirmed the figures look plausible. The contract calculated the GEN.';
-  if (status === 'DATA_DISPUTED_REFUNDED') return 'The declared revenue was judged implausible. The full escrow was refunded to the payor. To try again, create a new agreement.';
+  if (status === 'DATA_DISPUTED_AWARDED') return 'The declared revenue was judged implausible. The full escrow was paid to the artist. The payor does not get it back.';
+  if (status === 'DISPUTE_PAY_FAILED') return 'The artist award did not finish. Retry sends only that payment.';
   if (status === 'LOW_CONFIDENCE_DISPUTED') return 'Confidence is below 60. The GEN stays in escrow. Add another source, then verify again.';
   if (status === 'PAYOUT_FAILED') return 'One side of the transfer did not finish. Retry sends only the missing part. It does not pay twice.';
   if (status === 'REFUND_FAILED') return 'The payor refund did not finish. Retry sends only that refund.';
@@ -112,12 +114,13 @@ function SplitBreakdown({ declaredWei, bps, row }) {
   const chainArtist = weiFromField(row?.artist_amount);
   const chainPayor = weiFromField(row?.payor_share);
   const hasChain = declaredWei > 0n && (chainArtist > 0n || chainPayor > 0n);
-  const artistAmount = hasChain ? chainArtist : preview.artistAmount;
-  const payorAmount = hasChain ? chainPayor : preview.payorShare;
-  const mismatch = hasChain && (chainArtist !== preview.artistAmount || chainPayor !== preview.payorShare);
+  const disputedAward = row?.verdict === 'DATA_DISPUTED' && Number(row?.confidence) >= 60;
+  const artistAmount = disputedAward ? declaredWei : (hasChain ? chainArtist : preview.artistAmount);
+  const payorAmount = disputedAward ? 0n : (hasChain ? chainPayor : preview.payorShare);
+  const mismatch = hasChain && !disputedAward && (chainArtist !== preview.artistAmount || chainPayor !== preview.payorShare);
   const artistPct = formatBpsAsPercent(bps);
   const payorPct = formatBpsAsPercent(10000n - BigInt(String(bps || '0').replace(/\D/g, '') || '0'));
-  const disputed = row?.status === 'DATA_DISPUTED_REFUNDED' || row?.verdict === 'DATA_DISPUTED';
+  const artistPaid = disputedAward ? Boolean(row?.dispute_settled) : Boolean(row?.artist_paid);
 
   return (
     <div className="split-box">
@@ -129,7 +132,7 @@ function SplitBreakdown({ declaredWei, bps, row }) {
         <div>
           <span>Artist receives</span>
           <strong>{formatWeiToGen(artistAmount)} GEN</strong>
-          <em>{row ? sideLabel(artistAmount, Boolean(row.artist_paid)) : 'Preview'}</em>
+          <em>{row ? sideLabel(artistAmount, artistPaid) : 'Preview'}</em>
         </div>
         <div>
           <span>Payor keeps</span>
@@ -137,10 +140,13 @@ function SplitBreakdown({ declaredWei, bps, row }) {
           <em>{row ? sideLabel(payorAmount, Boolean(row.payor_share_returned)) : 'Preview'}</em>
         </div>
       </div>
-      {disputed && declaredWei > 0n && (
-        <p className="hint">On DATA_DISPUTED the contract refunds the full {formatWeiToGen(declaredWei)} GEN to the payor. It does not apply the percentage.</p>
+      {disputedAward && declaredWei > 0n && (
+        <p className="hint">DATA_DISPUTED pays the full {formatWeiToGen(declaredWei)} GEN to the artist. The payor receives nothing. The signed percentage is not applied.</p>
       )}
       {mismatch && <p className="hint warn-text">The on-chain amounts differ from the local BigInt preview. Refresh before signing another transaction.</p>}
+      {!disputedAward && (
+        <p className="hint">DATA_PLAUSIBLE pays this signed split. DATA_DISPUTED pays the full escrow to the artist and nothing to the payor.</p>
+      )}
       <p className="hint">These GEN amounts are integer division (total × bps ÷ 10000). The AI does not calculate them.</p>
     </div>
   );
@@ -431,7 +437,7 @@ export default function App() {
       });
       const latest = await readAgreement(id);
       setTxMessage({
-        status: latest?.status === 'PAYOUT_FAILED' || latest?.status === 'REFUND_FAILED' ? 'error' : 'success',
+        status: latest?.status === 'PAYOUT_FAILED' || latest?.status === 'DISPUTE_PAY_FAILED' ? 'error' : 'success',
         title: `${STATUS_LABEL[latest?.status] || latest?.status || 'Checked'} · #${id}`,
         detail: outcomeCopy(latest),
         hash: result.hash,
@@ -455,7 +461,7 @@ export default function App() {
       });
       const latest = await readAgreement(id);
       setTxMessage({
-        status: latest?.status === 'RESOLVED' || latest?.status === 'DATA_DISPUTED_REFUNDED' ? 'success' : 'error',
+        status: latest?.status === 'RESOLVED' || latest?.status === 'DATA_DISPUTED_AWARDED' ? 'success' : 'error',
         title: `${STATUS_LABEL[latest?.status] || 'Retried'} · #${id}`,
         detail: outcomeCopy(latest),
         hash: result.hash,
@@ -727,6 +733,18 @@ export default function App() {
                       <p>{row.verdict_reason}</p>
                     </div>
                   )}
+                  {Array.isArray(row.evidence) && row.evidence.length > 0 && (
+                    <div className="evidence-record">
+                      <p className="label">Pages the verdict was based on</p>
+                      {row.evidence.map((item) => (
+                        <div key={item.url} className="evidence-item">
+                          <a href={item.url} target="_blank" rel="noreferrer">{item.url}</a>
+                          <p className="mono">{item.readable ? item.sha256 : 'Unreadable — no text was stored'}</p>
+                          {item.readable && item.excerpt && <pre>{item.excerpt}</pre>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {(row.status !== 'AWAITING_DEPOSIT' || depositWei > 0n) && (
                     <SplitBreakdown
                       declaredWei={row.status === 'AWAITING_DEPOSIT' ? depositWei : declared}
@@ -814,7 +832,7 @@ export default function App() {
                         </button>
                       </>
                     )}
-                    {(row.status === 'PAYOUT_FAILED' || row.status === 'REFUND_FAILED') && isParty && (
+                    {(row.status === 'PAYOUT_FAILED' || row.status === 'DISPUTE_PAY_FAILED') && isParty && (
                       <button className="btn-primary" type="button" disabled={busy} onClick={() => handleRetry(row)}>
                         <RotateCcw size={16} /> Retry the missing transfer
                       </button>

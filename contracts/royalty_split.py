@@ -2,6 +2,7 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 from dataclasses import dataclass
+import hashlib
 import json
 
 UserError = gl.vm.UserError
@@ -187,9 +188,10 @@ def _clears_confidence(conf) -> bool:
 def _validator_agrees(leader_val, validator_val) -> bool:
     """Binary agreement only.
 
-    Validators must match the verdict label and whether confidence clears the
-    payout gate (60). They never compare, compute, or tolerate a money amount.
-    A mismatch on the gate would move GEN on one validator and hold it on another.
+    Validators must match the verdict label, whether confidence clears the
+    payout gate (60), and the sha256 of every page they read. They never
+    compare, compute, or tolerate a money amount. A mismatch on the gate or
+    on the page bytes would move GEN on one validator and hold it on another.
     """
     if not isinstance(leader_val, dict) or not isinstance(validator_val, dict):
         return False
@@ -206,9 +208,76 @@ def _validator_agrees(leader_val, validator_val) -> bool:
         return False
     if _clears_confidence(lc) != _clears_confidence(mc):
         return False
+    if not _evidence_agrees(leader_val, validator_val):
+        return False
     if lv in VALID_VERDICTS:
         return True
     return lv == "" and (not _clears_confidence(lc)) and (not _clears_confidence(mc))
+
+
+def _evidence_agrees(leader_val, validator_val) -> bool:
+    """Validators must have read the same bytes.
+
+    The verdict is not accepted when the page text differs. A URL alone is
+    not evidence: the sha256 is of the exact excerpt stored on the agreement.
+    """
+    left = _evidence_fingerprint(leader_val.get("evidence"))
+    right = _evidence_fingerprint(validator_val.get("evidence"))
+    if left is None or right is None:
+        return False
+    return left == right
+
+
+def _evidence_fingerprint(items):
+    if not isinstance(items, list):
+        return None
+    out = []
+    for item in items:
+        if not isinstance(item, dict):
+            return None
+        out.append((
+            str(item.get("url", "")),
+            bool(item.get("readable")),
+            str(item.get("sha256", "")),
+        ))
+    return tuple(out)
+
+
+def _evidence_item(url: str, body: str) -> dict:
+    text = body if isinstance(body, str) else ""
+    readable = len(text) > 0
+    digest = ""
+    if readable:
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return {
+        "url": str(url),
+        "readable": readable,
+        "sha256": digest,
+        "excerpt": text if readable else "",
+    }
+
+
+def _public_evidence(items) -> list:
+    finger = _evidence_fingerprint(items)
+    if finger is None:
+        return []
+    out = []
+    for item in items:
+        out.append({
+            "url": str(item.get("url", "")),
+            "readable": bool(item.get("readable")),
+            "sha256": str(item.get("sha256", "")),
+            "excerpt": str(item.get("excerpt", "")),
+        })
+    return out
+
+
+def _load_evidence(raw: str) -> list:
+    try:
+        data = json.loads(raw or "[]")
+    except Exception:
+        return []
+    return _public_evidence(data)
 
 
 def _bound_page_text(text) -> str:
@@ -267,8 +336,9 @@ class RoyaltyAgreement:
     confidence: u256
     artist_paid: bool
     payor_share_returned: bool
-    disputed_refunded: bool
+    dispute_settled: bool
     settled: bool
+    evidence_record: str
 
 
 class Contract(gl.Contract):
@@ -337,8 +407,9 @@ class Contract(gl.Contract):
             confidence=u256(0),
             artist_paid=False,
             payor_share_returned=False,
-            disputed_refunded=False,
+            dispute_settled=False,
             settled=False,
+            evidence_record="",
         )
         return agreement_id
 
@@ -403,20 +474,24 @@ class Contract(gl.Contract):
         reference_urls_list = _urls_to_list(a.reference_urls)
 
         def leader_fn() -> dict:
+            evidence = []
             readable = []
             unread = []
             for url in reference_urls_list:
                 body = _fetch_url(url)
-                if len(body) == 0:
-                    unread.append(url)
+                item = _evidence_item(url, body)
+                evidence.append(item)
+                if item["readable"]:
+                    readable.append("[" + url + "]: " + item["excerpt"])
                 else:
-                    readable.append("[" + url + "]: " + body)
+                    unread.append(url)
 
             if len(readable) == 0:
                 return {
                     "verdict": "",
                     "confidence": 0,
                     "reason": "No reference page could be read: " + ", ".join(unread),
+                    "evidence": evidence,
                 }
 
             unread_note = ""
@@ -449,7 +524,9 @@ class Contract(gl.Contract):
                 "{\"verdict\": \"DATA_PLAUSIBLE\" | \"DATA_DISPUTED\", \"confidence\": <0-100>, \"reason\": \"<short justification>\"}"
             )
             raw = gl.nondet.exec_prompt(prompt)
-            return _parse_verdict(raw)
+            parsed = _parse_verdict(raw)
+            parsed["evidence"] = evidence
+            return parsed
 
         def validator_fn(leader_res) -> bool:
             if not isinstance(leader_res, gl.vm.Return):
@@ -476,6 +553,7 @@ class Contract(gl.Contract):
             conf_int = 100
         a.confidence = u256(conf_int)
         a.verdict_reason = str(result.get("reason", ""))
+        a.evidence_record = json.dumps(_public_evidence(result.get("evidence")))
 
         if conf_int < MIN_CONFIDENCE or a.verdict not in VALID_VERDICTS:
             a.status = "LOW_CONFIDENCE_DISPUTED"
@@ -484,31 +562,40 @@ class Contract(gl.Contract):
 
         # Persist the binary verdict before any transfer so a reentrant resolve cannot re-run AI.
         if a.verdict == "DATA_DISPUTED":
-            a.status = "REFUND_FAILED"
+            a.status = "DISPUTE_PAY_FAILED"
             self.agreements[agreement_id] = a
-            self._refund_disputed(agreement_id)
+            self._award_disputed(agreement_id)
             return
 
         a.status = "PAYOUT_FAILED"
         self.agreements[agreement_id] = a
         self._execute_split_settlement(agreement_id)
 
-    def _refund_disputed(self, agreement_id: str) -> None:
+    def _award_disputed(self, agreement_id: str) -> None:
+        """Rejected declaration pays the artist the full escrow.
+
+        Refunding the payor made a failed claim costless for the party who
+        attested the figure. Both decisive verdicts now distribute the whole
+        deposit: the signed split when it is plausible, and the full amount
+        to the artist when it is not.
+        """
         a = self.agreements[agreement_id]
-        if a.disputed_refunded:
-            a.status = "DATA_DISPUTED_REFUNDED"
+        if a.dispute_settled:
+            a.status = "DATA_DISPUTED_AWARDED"
+            a.artist_paid = True
             a.settled = True
             self.agreements[agreement_id] = a
             return
         try:
-            _pay(a.payor, a.declared_revenue_amount)
-            a.disputed_refunded = True
+            _pay(a.artist, a.declared_revenue_amount)
+            a.dispute_settled = True
+            a.artist_paid = True
             a.settled = True
-            a.status = "DATA_DISPUTED_REFUNDED"
+            a.status = "DATA_DISPUTED_AWARDED"
         except Exception as e:
-            a.status = "REFUND_FAILED"
+            a.status = "DISPUTE_PAY_FAILED"
             a.settled = False
-            a.verdict_reason = _append_reason(a.verdict_reason, "Disputed refund failed: " + str(e))
+            a.verdict_reason = _append_reason(a.verdict_reason, "Disputed award failed: " + str(e))
         self.agreements[agreement_id] = a
 
     def _execute_split_settlement(self, agreement_id: str) -> None:
@@ -570,18 +657,19 @@ class Contract(gl.Contract):
         if (not _same_addr(sender, a.payor)) and (not _same_addr(sender, a.artist)):
             raise UserError("Only payor or artist can retry")
 
-        if a.status == "REFUND_FAILED":
-            self._refund_disputed(agreement_id)
+        if a.status == "DISPUTE_PAY_FAILED":
+            self._award_disputed(agreement_id)
             return
 
         if a.status == "PAYOUT_FAILED":
             self._execute_split_settlement(agreement_id)
             return
 
-        raise UserError("Can only retry PAYOUT_FAILED or REFUND_FAILED agreements")
+        raise UserError("Can only retry PAYOUT_FAILED or DISPUTE_PAY_FAILED agreements")
 
     def _agreement_dict(self, agreement_id: str, a, full: bool) -> dict:
         artist_amount, payor_share = _split_amounts(a.declared_revenue_amount, a.artist_split_bps)
+        disputed_award = a.verdict == "DATA_DISPUTED" and _clears_confidence(a.confidence)
         row = {
             "agreement_id": agreement_id,
             "payor": _addr_str(a.payor),
@@ -593,17 +681,20 @@ class Contract(gl.Contract):
             # Deterministic preview of the signed split. Not an AI output.
             "artist_amount": str(int(artist_amount)),
             "payor_share": str(int(payor_share)),
+            "settlement_artist": str(int(a.declared_revenue_amount if disputed_award else artist_amount)),
+            "settlement_payor": "0" if disputed_award else str(int(payor_share)),
             "status": a.status,
             "verdict": a.verdict,
             "verdict_reason": a.verdict_reason,
             "confidence": int(a.confidence),
             "artist_paid": bool(a.artist_paid),
             "payor_share_returned": bool(a.payor_share_returned),
-            "disputed_refunded": bool(a.disputed_refunded),
+            "dispute_settled": bool(a.dispute_settled),
             "settled": bool(a.settled),
         }
         if full:
             row["reference_urls"] = _urls_to_list(a.reference_urls)
+            row["evidence"] = _load_evidence(a.evidence_record)
         return row
 
     @gl.public.view
