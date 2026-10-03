@@ -189,9 +189,10 @@ def _validator_agrees(leader_val, validator_val) -> bool:
     """Binary agreement only.
 
     Validators must match the verdict label, whether confidence clears the
-    payout gate (60), and the sha256 of every page they read. They never
-    compare, compute, or tolerate a money amount. A mismatch on the gate or
-    on the page bytes would move GEN on one validator and hold it on another.
+    payout gate (60), and which source URLs were readable. They never
+    compare, compute, or tolerate a money amount. Page bytes are not compared:
+    a public page is not stable across two fetches, and requiring identical
+    sha256 values rolls the round back.
     """
     if not isinstance(leader_val, dict) or not isinstance(validator_val, dict):
         return False
@@ -216,10 +217,11 @@ def _validator_agrees(leader_val, validator_val) -> bool:
 
 
 def _evidence_agrees(leader_val, validator_val) -> bool:
-    """Validators must have read the same bytes.
+    """Validators must have read the same URLs.
 
-    The verdict is not accepted when the page text differs. A URL alone is
-    not evidence: the sha256 is of the exact excerpt stored on the agreement.
+    The stored sha256 and excerpt are the leader's copy, shown by get_agreement.
+    Comparing those hashes would reject a round whenever Wikipedia text differs
+    by a single byte between the two fetches.
     """
     left = _evidence_fingerprint(leader_val.get("evidence"))
     right = _evidence_fingerprint(validator_val.get("evidence"))
@@ -238,7 +240,6 @@ def _evidence_fingerprint(items):
         out.append((
             str(item.get("url", "")),
             bool(item.get("readable")),
-            str(item.get("sha256", "")),
         ))
     return tuple(out)
 

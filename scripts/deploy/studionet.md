@@ -15,7 +15,7 @@ Use Studionet only. Do not point the app at the Asimov or Bradbury testnets.
 5. Copy the address into `frontend/.env`:
 
 ```
-VITE_CONTRACT_ADDRESS=0xefc83BECd5fC9C5D0A887221abd3699d4c0CAAf2
+VITE_CONTRACT_ADDRESS=0x397D87F7E6565dEC2Adfbeb2201D5a1C953ccB34
 ```
 
 6. Fund MetaMask from Studio → **Accounts** (not a public testnet faucet).
@@ -23,6 +23,6 @@ VITE_CONTRACT_ADDRESS=0xefc83BECd5fC9C5D0A887221abd3699d4c0CAAf2
 
 ## Deployed Contract
 
-`0xefc83BECd5fC9C5D0A887221abd3699d4c0CAAf2`
+`0x397D87F7E6565dEC2Adfbeb2201D5a1C953ccB34`
 
-https://explorer-studio.genlayer.com/address/0xefc83BECd5fC9C5D0A887221abd3699d4c0CAAf2
+https://explorer-studio.genlayer.com/address/0x397D87F7E6565dEC2Adfbeb2201D5a1C953ccB34

@@ -16,7 +16,7 @@ Flow:
 
 1. When the agreement is created, the parties fix `artist_split_bps` (1–9999). That number does not change, and it is not an AI output.
 2. The payor declares `declared_revenue_amount` by attaching that exact GEN amount (`gl.message.value`).
-3. `gl.vm.run_nondet` returns only `DATA_PLAUSIBLE` or `DATA_DISPUTED`, plus a confidence score, plus the sha256 and excerpt of every page that was read. Validators must match the verdict label, whether confidence clears 60, and those page hashes. They do not compare money. A URL by itself is not evidence.
+3. `gl.vm.run_nondet` returns only `DATA_PLAUSIBLE` or `DATA_DISPUTED`, plus a confidence score, plus the sha256 and excerpt of every page the leader read. Validators must match the verdict label, whether confidence clears 60, and which URLs were readable. They do not compare money, and they do not require the page bytes to match. `get_agreement` stores the leader's excerpt and its sha256.
 4. Confidence below 60 sets `LOW_CONFIDENCE_DISPUTED`. GEN stays in escrow. The unreadable or low-confidence pages stay on the agreement. Add sources, then resolve again.
 5. `DATA_DISPUTED` with confidence at least 60 pays the full escrow to the artist. The payor, who attested the figure, does not receive it back.
 6. `DATA_PLAUSIBLE` with confidence at least 60 calls `_execute_split_settlement`, outside `run_nondet`:
@@ -58,9 +58,9 @@ https://royaltysplit-genlayer.vercel.app
 
 ## Deployed Contract
 
-`0xefc83BECd5fC9C5D0A887221abd3699d4c0CAAf2`
+`0x397D87F7E6565dEC2Adfbeb2201D5a1C953ccB34`
 
-https://explorer-studio.genlayer.com/address/0xefc83BECd5fC9C5D0A887221abd3699d4c0CAAf2
+https://explorer-studio.genlayer.com/address/0x397D87F7E6565dEC2Adfbeb2201D5a1C953ccB34
 
 ### Status
 
@@ -71,7 +71,7 @@ https://explorer-studio.genlayer.com/address/0xefc83BECd5fC9C5D0A887221abd3699d4
 - `LOW_CONFIDENCE_DISPUTED` — funds stay put; more sources may be added
 - `PAYOUT_FAILED` / `DISPUTE_PAY_FAILED` — `retry_resolution` sends only the side whose flag is still false
 
-`artist_paid`, `payor_share_returned`, and `dispute_settled` guard each leg. A retry does not pay twice. `get_agreement` returns each source URL with the sha256 and the excerpt the validators actually read.
+`artist_paid`, `payor_share_returned`, and `dispute_settled` guard each leg. A retry does not pay twice. `get_agreement` returns each source URL with the sha256 and the excerpt the leader read.
 
 ## Money handling
 
@@ -109,7 +109,7 @@ node scripts/check-no-float-money.js
 npm run test:money
 ```
 
-Contract suite (`gltest`): the `DATA_PLAUSIBLE` path pays the artist 600 and the payor 400; the `DATA_DISPUTED` path pays 1000 to the artist and 0 to the payor; the stored evidence excerpt hashes to the page that was read; a different page hash is not accepted; low confidence keeps the escrow, then more sources are added and resolve runs again; basis points outside 1–9999 are rejected; a missing URL is rejected; the same wallet is rejected; a second deposit and a second resolve are rejected; a 1 wei deposit at 6000 bps is rejected because the artist would receive 0; artist-only, payor-only, both-sides, and disputed-award transfer failures are covered. `retry_resolution` sends only the missing leg and does not pay twice.
+Contract suite (`gltest`): the `DATA_PLAUSIBLE` path pays the artist 600 and the payor 400; the `DATA_DISPUTED` path pays 1000 to the artist and 0 to the payor; the stored evidence excerpt hashes to the page the leader read; a page one validator could not read is not accepted; low confidence keeps the escrow, then more sources are added and resolve runs again; basis points outside 1–9999 are rejected; a missing URL is rejected; the same wallet is rejected; a second deposit and a second resolve are rejected; a 1 wei deposit at 6000 bps is rejected because the artist would receive 0; artist-only, payor-only, both-sides, and disputed-award transfer failures are covered. `retry_resolution` sends only the missing leg and does not pay twice.
 
 ## Frontend
 
@@ -125,4 +125,4 @@ npm install
 npm run dev
 ```
 
-Environment: `frontend/.env` → `VITE_CONTRACT_ADDRESS=0xefc83BECd5fC9C5D0A887221abd3699d4c0CAAf2`
+Environment: `frontend/.env` → `VITE_CONTRACT_ADDRESS=0x397D87F7E6565dEC2Adfbeb2201D5a1C953ccB34`

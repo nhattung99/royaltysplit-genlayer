@@ -238,7 +238,9 @@ def test_split_amounts_hand_calc_and_validator_is_binary(direct_vm, direct_deplo
     assert agrees(plausible_high, {"verdict": "DATA_PLAUSIBLE", "confidence": 77, "reason": "x", "evidence": same_page}) is True
     assert agrees(plausible_high, plausible_low) is False
     assert agrees(plausible_high, disputed_high) is False
-    assert agrees(plausible_high, {**plausible_high, "evidence": other_page}) is False
+    assert agrees(plausible_high, {**plausible_high, "evidence": other_page}) is True
+    unread_page = [{"url": REF1, "readable": False, "sha256": "", "excerpt": ""}]
+    assert agrees(plausible_high, {**plausible_high, "evidence": unread_page}) is False
     assert agrees({"verdict": "", "confidence": 0, "evidence": same_page}, {"verdict": "", "confidence": 10, "evidence": same_page}) is True
     assert agrees({"verdict": "", "confidence": 0, "evidence": same_page}, plausible_high) is False
 
